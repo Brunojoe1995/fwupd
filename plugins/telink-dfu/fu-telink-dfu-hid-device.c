@@ -363,7 +363,7 @@ fu_telink_dfu_hid_device_set_quirk_kv(FuDevice *device,
 
 	/* version of supported Telink usb ota tool */
 	self->windows_hid_tool_ver = 0;
-	if (g_strcmp0(key, "HidToolVer") == 0) {
+	if (g_strcmp0(key, "TelinkHidToolVer") == 0) {
 		ver_split = g_strsplit(value, ".", 2);
 		if (!fu_strtoull(ver_split[0], &tmp, 0, G_MAXUINT16, FU_INTEGER_BASE_AUTO, error))
 			return FALSE;

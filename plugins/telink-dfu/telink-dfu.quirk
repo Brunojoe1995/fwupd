@@ -15,11 +15,11 @@ Name = BT Keyboard Prototype
 Plugin = telink_dfu
 GType = FuTelinkDfuHidDevice
 Name = Dongle Prototype
-HidToolVer = 1.0
+TelinkHidToolVer = 1.0
 
 # Ryder dongle
 [USB\VID_0461&PID_4F27]
 Plugin = telink_dfu
 GType = FuTelinkDfuHidDevice
 Name = Ryder dongle
-HidToolVer = 5.02
+TelinkHidToolVer = 5.02
