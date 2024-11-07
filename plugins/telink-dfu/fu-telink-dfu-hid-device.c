@@ -28,6 +28,13 @@ G_DEFINE_TYPE(FuTelinkDfuHidDevice, fu_telink_dfu_hid_device, FU_TYPE_HID_DEVICE
 #define FU_TELINK_DFU_HID_EP_OUT		    (0x00 | 5)
 #define FU_TELINK_DEVICE_WINDOWS_TOOL_VERSION(a, b) ((a) * 100 + (b))
 
+static void
+fu_telink_dfu_hid_device_to_string(FuDevice *device, guint idt, GString *str)
+{
+	FuTelinkDfuHidDevice *self = FU_TELINK_DFU_HID_DEVICE(device);
+	fwupd_codec_string_append_hex(str, idt, "WindowsHidToolVer", self->windows_hid_tool_ver);
+}
+
 static FuStructTelinkDfuHidPkt *
 fu_telink_dfu_hid_device_create_packet(FuTelinkDfuCmd cmd,
 				       const guint8 *buf,
@@ -427,4 +434,5 @@ fu_telink_dfu_hid_device_class_init(FuTelinkDfuHidDeviceClass *klass)
 	device_class->write_firmware = fu_telink_dfu_hid_device_write_firmware;
 	device_class->set_progress = fu_telink_dfu_hid_device_set_progress;
 	device_class->set_quirk_kv = fu_telink_dfu_hid_device_set_quirk_kv;
+	device_class->to_string = fu_telink_dfu_hid_device_to_string;
 }
