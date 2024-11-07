@@ -41,9 +41,9 @@ fu_telink_dfu_hid_device_create_packet(FuTelinkDfuCmd cmd,
 				       gsize bufsz,
 				       GError **error)
 {
-	FuStructTelinkDfuHidPkt *st_pkt = fu_struct_telink_dfu_hid_pkt_new();
-	FuStructTelinkDfuHidPkt *payload = fu_struct_telink_dfu_hid_pkt_payload_new();
 	guint16 ota_data_len;
+	g_autoptr(FuStructTelinkDfuHidPkt) st_pkt = fu_struct_telink_dfu_hid_pkt_new();
+	g_autoptr(FuStructTelinkDfuHidPkt) st_payload = fu_struct_telink_dfu_hid_pkt_payload_new();
 
 	switch (cmd) {
 	case FU_TELINK_DFU_CMD_OTA_FW_VERSION:
@@ -61,46 +61,48 @@ fu_telink_dfu_hid_device_create_packet(FuTelinkDfuCmd cmd,
 		break;
 	}
 
-	fu_struct_telink_dfu_hid_pkt_payload_set_ota_cmd(payload, cmd);
-	if (buf != NULL)
-		if (!fu_struct_telink_dfu_hid_pkt_payload_set_ota_data(payload,
+	fu_struct_telink_dfu_hid_pkt_payload_set_ota_cmd(st_payload, cmd);
+	if (buf != NULL) {
+		if (!fu_struct_telink_dfu_hid_pkt_payload_set_ota_data(st_payload,
 								       buf,
 								       bufsz,
 								       error)) {
 			return NULL;
-		};
-	/* exclude the ota_cmd field */
-	fu_struct_telink_dfu_hid_pkt_payload_set_crc(
-	    payload,
-	    ~fu_crc16(FU_CRC_KIND_B16_USB, payload->data, payload->len - 2));
-	fu_struct_telink_dfu_hid_pkt_set_ota_data_len(st_pkt, ota_data_len);
-	if (!fu_struct_telink_dfu_hid_pkt_set_payload(st_pkt, payload, error)) {
-		return NULL;
+		}
 	}
 
-	return st_pkt;
+	/* exclude the ota_cmd field */
+	fu_struct_telink_dfu_hid_pkt_payload_set_crc(
+	    st_payload,
+	    ~fu_crc16(FU_CRC_KIND_B16_USB, st_payload->data, st_payload->len - 2));
+	fu_struct_telink_dfu_hid_pkt_set_ota_data_len(st_pkt, ota_data_len);
+	if (!fu_struct_telink_dfu_hid_pkt_set_payload(st_pkt, st_payload, error))
+		return NULL;
+
+	return g_steal_pointer(&st_pkt);
 }
 
 static gboolean
-fu_telink_dfu_hid_device_write(FuTelinkDfuHidDevice *self, guint8 *buf, gsize bufsz, GError **error)
+fu_telink_dfu_hid_device_write(FuTelinkDfuHidDevice *self,
+			       const guint8 *buf,
+			       gsize bufsz,
+			       GError **error)
 {
-	FuHidDevice *hid_dev = FU_HID_DEVICE(self);
 	FuHidDeviceFlags set_report_flag = FU_HID_DEVICE_FLAG_NONE;
+	guint8 buf_mut[FU_TELINK_DFU_HID_DEVICE_OTA_LENGTH] = {0};
 
 	if (self->windows_hid_tool_ver >= FU_TELINK_DEVICE_WINDOWS_TOOL_VERSION(5, 2))
 		set_report_flag = FU_HID_DEVICE_FLAG_USE_INTERRUPT_TRANSFER;
 
-	if (!fu_hid_device_set_report(hid_dev,
-				      FU_TELINK_DFU_HID_DEVICE_REPORT_ID,
-				      buf,
-				      FU_TELINK_DFU_HID_DEVICE_OTA_LENGTH,
-				      FU_TELINK_DFU_HID_DEVICE_REPORT_TIMEOUT,
-				      set_report_flag,
-				      error)) {
+	if (!fu_memcpy_safe(buf_mut, sizeof(buf_mut), 0x0, buf, bufsz, 0x0, bufsz, error))
 		return FALSE;
-	}
-
-	return TRUE;
+	return fu_hid_device_set_report(FU_HID_DEVICE(self),
+					FU_TELINK_DFU_HID_DEVICE_REPORT_ID,
+					buf_mut,
+					sizeof(buf_mut),
+					FU_TELINK_DFU_HID_DEVICE_REPORT_TIMEOUT,
+					set_report_flag,
+					error);
 }
 
 static gboolean
@@ -109,8 +111,9 @@ fu_telink_dfu_hid_device_write_blocks(FuTelinkDfuHidDevice *self,
 				      FuProgress *progress,
 				      GError **error)
 {
-	FuStructTelinkDfuHidLongPkt *st_long_pkt = fu_struct_telink_dfu_hid_long_pkt_new();
 	guint payload_index = 0;
+	g_autoptr(FuStructTelinkDfuHidLongPkt) st_long_pkt =
+	    fu_struct_telink_dfu_hid_long_pkt_new();
 
 	/* progress */
 	fu_progress_set_id(progress, G_STRLOC);
@@ -205,7 +208,6 @@ fu_telink_dfu_hid_device_write_blocks(FuTelinkDfuHidDevice *self,
 static gboolean
 fu_telink_dfu_hid_device_ota_start(FuTelinkDfuHidDevice *self, GError **error)
 {
-	FuStructTelinkDfuHidLongPkt *st_long_pkt = fu_struct_telink_dfu_hid_long_pkt_new();
 	g_autoptr(FuStructTelinkDfuHidPkt) st_pkt = NULL;
 
 	st_pkt =
@@ -214,13 +216,16 @@ fu_telink_dfu_hid_device_ota_start(FuTelinkDfuHidDevice *self, GError **error)
 		return FALSE;
 
 	if (self->windows_hid_tool_ver >= FU_TELINK_DEVICE_WINDOWS_TOOL_VERSION(5, 2)) {
+		g_autoptr(FuStructTelinkDfuHidLongPkt) st_long_pkt =
+		    fu_struct_telink_dfu_hid_long_pkt_new();
+		g_autoptr(FuStructTelinkDfuHidPktPayload) st_payload =
+		    fu_struct_telink_dfu_hid_pkt_get_payload(st_pkt);
 		fu_struct_telink_dfu_hid_long_pkt_set_ota_data_len(
 		    st_long_pkt,
 		    fu_struct_telink_dfu_hid_pkt_get_ota_data_len(st_pkt));
-		if (!fu_struct_telink_dfu_hid_long_pkt_set_payload_1(
-			st_long_pkt,
-			fu_struct_telink_dfu_hid_pkt_get_payload(st_pkt),
-			error))
+		if (!fu_struct_telink_dfu_hid_long_pkt_set_payload_1(st_long_pkt,
+								     st_payload,
+								     error))
 			return FALSE;
 		if (!fu_telink_dfu_hid_device_write(self,
 						    st_long_pkt->data,
@@ -240,10 +245,9 @@ fu_telink_dfu_hid_device_ota_start(FuTelinkDfuHidDevice *self, GError **error)
 static gboolean
 fu_telink_dfu_hid_device_ota_stop(FuTelinkDfuHidDevice *self, guint number_chunks, GError **error)
 {
-	FuStructTelinkDfuHidLongPkt *st_long_pkt = fu_struct_telink_dfu_hid_long_pkt_new();
+	guint16 pkt_index = (guint16)(number_chunks)-1;
 	g_autoptr(FuStructTelinkDfuEndCheck) st_end_check = fu_struct_telink_dfu_end_check_new();
 	g_autoptr(FuStructTelinkDfuHidPkt) st_pkt = NULL;
-	guint16 pkt_index = (guint16)(number_chunks)-1;
 
 	/* last data packet index */
 	fu_struct_telink_dfu_end_check_set_pkt_index(st_end_check, pkt_index);
@@ -258,7 +262,9 @@ fu_telink_dfu_hid_device_ota_stop(FuTelinkDfuHidDevice *self, guint number_chunk
 	if (st_pkt == NULL)
 		return FALSE;
 	if (self->windows_hid_tool_ver >= FU_TELINK_DEVICE_WINDOWS_TOOL_VERSION(5, 2)) {
-		FuStructTelinkDfuHidPktPayload *st_payload =
+		g_autoptr(FuStructTelinkDfuHidLongPkt) st_long_pkt =
+		    fu_struct_telink_dfu_hid_long_pkt_new();
+		g_autoptr(FuStructTelinkDfuHidPktPayload) st_payload =
 		    fu_struct_telink_dfu_hid_pkt_get_payload(st_pkt);
 		fu_struct_telink_dfu_hid_pkt_payload_set_crc(st_payload, 0xFFFF);
 		fu_struct_telink_dfu_hid_long_pkt_set_ota_data_len(st_long_pkt, 6);
